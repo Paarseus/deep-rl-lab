@@ -10,8 +10,9 @@ Full eGPU Setup Guide — RTX 5070 Ti on Ubuntu 24.04 (Framework Laptop)
 $ lspci | grep -i nvidia
 ```
 Result:
+```Shell
 57:00.0 VGA compatible controller: NVIDIA Corporation Device 2c05 (rev a1)
-
+'''
 If not detected:
     Reboot with eGPU plugged in
     Check boltctl for Thunderbolt status
