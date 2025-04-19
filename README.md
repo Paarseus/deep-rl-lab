@@ -12,7 +12,7 @@ $ lspci | grep -i nvidia
 Result:
 ```Shell
 57:00.0 VGA compatible controller: NVIDIA Corporation Device 2c05 (rev a1)
-'''
+```
 If not detected:
     Reboot with eGPU plugged in
     Check boltctl for Thunderbolt status
