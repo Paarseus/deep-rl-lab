@@ -17,13 +17,13 @@ https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install
 ### Step 4: Pull the CARLA Docker image
 Pull the image with the following command:
 ```Bash
-docker pull carlasim/carla:0.10.0
+$ docker pull carlasim/carla:0.10.0
 ```
 
 ### Step 5: Run the image
 Running the Docker image without display:
 ```Bash
-docker run \
+$ docker run \
     --runtime=nvidia \
     --net=host \
     --env=NVIDIA_VISIBLE_DEVICES=all \
@@ -34,7 +34,7 @@ docker run \
 Running the Docker image with a display:
 To run the Docker image with a display, you will need the x11 display protocol:
 ```Bash
-docker run \
+$ docker run \
     --runtime=nvidia \
     --net=host \
     --user=$(id -u):$(id -g) \
