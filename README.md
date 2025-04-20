@@ -75,4 +75,10 @@ Test with:
 $ glxinfo | grep "OpenGL renderer"
 ```
 
+### Live GPU Monitoring with watch
+
+Run this:
+```Shell
+$ watch -n 1 nvidia-smi
+```
 
