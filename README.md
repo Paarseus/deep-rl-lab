@@ -1,4 +1,4 @@
 Checklist:
-> Complete TensorBoard Doc
-> Carla Costum Car Setup
-> Start DQN Doc
+> Complete TensorBoard Doc <br>
+> Carla Costum Car Setup <br> 
+> Start DQN Doc <br>
