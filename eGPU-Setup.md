@@ -1,6 +1,8 @@
 ## eGPU Setup
 Full eGPU Setup Guide — RTX 5070 Ti on Ubuntu 24.04 (Framework Laptop)
 
+https://developer.nvidia.com/blog/accelerating-machine-learning-on-a-linux-laptop-with-an-external-gpu/
+
 >Ubuntu 24.04 installed <br>
 >Secure Boot disabled in BIOS <br>
 >eGPU plugged in via Thunderbolt 4/USB4
