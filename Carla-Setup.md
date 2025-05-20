@@ -31,8 +31,13 @@ $ docker run \
     carlasim/carla:0.10.0 bash CarlaUnreal.sh -RenderOffScreen -nosound
 ```
 
-Running the Docker image with a display:
 To run the Docker image with a display, you will need the x11 display protocol:
+Switch to X11 from Wayland by editing the config file using this command:
+```bash
+$ sudo nano /etc/gdm3/custom.conf
+```
+Then uncomment the line *WaylandEnable=false* . <br> <br>
+Running the Docker image with a display:
 ```Bash
 $ docker run \
     --runtime=nvidia \
