@@ -161,5 +161,5 @@ $ xrandr --listproviders
 ```shell
 docker: Error response from daemon: unknown or invalid runtime name: nvidia
 ```
-Havent found a solution yet!
+Havent found a solution yet! From reading NVIDIA container toolkit github, found out the container already has the CUDA Drivers inside so im guessing installing the both caused the problem.
 
