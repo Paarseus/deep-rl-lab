@@ -137,3 +137,23 @@ Run this:
 $ watch -n 1 nvidia-smi
 ```
 
+
+### UPDATE
+#### 1. Official NVIDIA eGPU Documentation <br>
+https://developer.nvidia.com/blog/accelerating-machine-learning-on-a-linux-laptop-with-an-external-gpu/ <br>
+
+#### 2. Disable Nouveau Kernel Driver <br>
+https://askubuntu.com/questions/841876/how-to-disable-nouveau-kernel-driver <br>
+
+#### 3. NVIDIA Prime Package
+```shell
+$ sudo apt install nvidia-prime
+$ sudo prime-select query
+$ sudo prime-select nvidia/on-demand/intel
+$ sudo reboot
+```
+#### 4. "xrandr" for Monitor Configuration
+```shell
+$ xrandr --listproviders
+```
+
