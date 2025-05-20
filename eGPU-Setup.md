@@ -157,3 +157,9 @@ $ sudo reboot
 $ xrandr --listproviders
 ```
 
+#### 5. Errors
+```shell
+docker: Error response from daemon: unknown or invalid runtime name: nvidia
+```
+Havent found a solution yet!
+
