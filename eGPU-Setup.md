@@ -34,8 +34,61 @@ Choose:
     GPU: RTX 5070 Ti
     OS: Linux 64-bit
     Download .run file (e.g. NVIDIA-Linux-x86_64-570.144.run)
+### 3.1 NVIDIA Driver Package Installation (Optional)
+```shell
+$ sudo apt install nvidia-driver-570-open -y
+$ sudo apt update
+```
 
-### 4.Prepare for Installation
+### 3.2 Install CUDA 
+Install CUDA 12.8 for proper GPU support:
+```shell
+# Download and install the CUDA keyring
+$ wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+$ sudo dpkg -i cuda-keyring_1.1-1_all.deb
+
+# Update and install CUDA toolkit
+$ sudo apt update
+$ sudo apt install cuda-toolkit-12-8 -y
+```
+
+### 3.3 Install Thunderbolt Utilities
+Install tools to manage Thunderbolt connections:
+```shell
+$ sudo apt install bolt thunderbolt-tools
+```
+
+### 3.4 Configure Thunderbolt Connection
+```shell
+# Check Thunderbolt controller status
+$ sudo boltctl
+
+# Connect your eGPU to the Thunderbolt port on your laptop
+# Then authorize the device
+$ sudo boltctl enroll [UUID or device name]
+
+# Verify the connection
+$ lspci | grep -i nvidia
+```
+### 3.5 Configure NVIDIA Settings for External GPU
+```shell
+# Configure X server to allow external GPUs
+$ sudo nvidia-xconfig --allow-external-gpus
+
+# Reboot your system
+$ sudo reboot
+```
+### 3.6 Verify NVIDIA Installation
+After rebooting, check if your GPU is properly recognized:
+```shell
+# Check if NVIDIA driver is loaded
+$ nvidia-smi
+
+# Check NVIDIA settings
+$ nvidia-settings
+```
+
+### 4.Prepare for Installation (also used for uninstalling)
 Clean up any previous drivers:
 ```Shell
 $ sudo apt purge '^nvidia-.*' -y
