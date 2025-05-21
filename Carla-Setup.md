@@ -49,3 +49,15 @@ $ docker run \
     --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
     carlasim/carla:0.10.0 bash CarlaUnreal.sh -nosound
 ```
+
+### ERRORS
+#### 1. INVALID RUNTIME: NVIDIA
+link: https://github.com/NVIDIA/nvidia-docker/issues/838#issuecomment-439346505
+
+```shell
+$ apt-get install -y nvidia-container-toolkit-base
+$ nvidia-ctk --version
+$ nvidia-ctk runtime configure --runtime=docker
+$ sudo systemctl daemon-reload
+$ sudo systemctl restart docker
+```
