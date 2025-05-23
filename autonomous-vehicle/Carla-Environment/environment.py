@@ -1,4 +1,5 @@
 import carla
+import gymnasium as gym
 import random
 import numpy as np
 import pygame
@@ -36,6 +37,58 @@ class CarlaEnvironment():
 		self.create_pedestrians()
 
 	def reset(self):
+		try:
+			if len(self.actor_list) != 0 or len(self.sensor_list) !=0:
+				self.client.apply_batch([carla.command.DestoryActor(x) for x in self.sensor_list])
+				self.client.apply_batch([carla.command.DestroyActor(x) for x in self.actor_list])
+				self.sensor_list.clear()
+				self.actor_list.clear()
+			self.remove_sensors()
+
+			vehicle_bp = self.get_vehicle(CAR_NAME)
+			if self.town == "Town10":
+				transform = self.map.get_spawn_points()[1]
+				self.total_distance = 750
+			elif self.town == "Town10HD":
+				transform = self.map.get_spawn_points()[1]
+				self.total_distance = 780
+			else:
+				transform = random.choice(self.map.get_spawn_points())
+				self.total_distance = 250
+
+			self.vahicle = self.world.try_spawn_actor(vehicle_bp, transform)
+			self.actor_list.append(self.vehicle)
+
+			self.camera_obj = CameraSensor(self.vehicle)
+			while(len(self.camera_obj.front_camera) == 0):
+				time.sleep(0.0001)
+			self.image_obs = self.camera_obj.front_camera.pop(-1)
+			self.sensor_list.append(self.env_camera_obj.sensor)
+
+			if self.display_on:
+				self.env_camera_obj = CameraSensorEnv(self.vehicle)
+				self.sensor_list.append(self.env_camera_obj.sensor)
+
+			self.collision_obj = CollisionSensor(self.vehicle)
+			self.collision_history = self.collision_obj.collision_data
+			self.sensor_list.append(self.collision_obj.sensor)
+
+			self.timesteps = 0
+			self.rotation = self.vehicle.get_transform().rotation.yaw
+			self.previous_location = self.vehicle.get_location()
+			self.distance_traveled = 0.0
+			self.center_lane_deviation = 0.0
+			self.target_speed = 22
+			self.max_speed = 25.0
+			self.min_speed = 15.0
+			self.max_distance_from_center = 3
+			self.throttle = float(0.0)
+			self.previous_steer = float(0.0)
+			self.velocity = float(0.0)
+			slef.angle = float(0.0)
+			self.distance_covered = 0.0
+
+
 	def step(self, action_idx):
 
 
