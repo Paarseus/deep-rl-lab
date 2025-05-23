@@ -38,6 +38,11 @@ class CarlaEnvironment():
 	def reset(self):
 	def step(self, action_idx):
 
+
+#-------------------------------------------------------------------#
+#                           NPC GENERATION                          #
+#-------------------------------------------------------------------#
+
 	def create_pedestrians(self):
 		try:
 
@@ -71,3 +76,20 @@ class CarlaEnvironment():
 
 		except:
 			self.client.apply_batch([carla.command.DestroyActor(x) for x in self.walker_list])
+
+	def set_other_vehicles(self):
+		try:
+			for _ in range(0, NUMBER_OF_VEHICLES):
+				spawn_point = random.choice(self.map.get_spawn_points())
+				bp_vehicle = random.choice(self.blueprint_library.filter('vehilce'))
+				other_vehicle = self.world.try_spawn_actor(bp_vehicle, spawn_point)
+			if other_vehicle is not None:
+				other_vehicle.set_autopilot(True)
+				self.actor_list.append(other_vehicle)
+			print("Traffic has been generated with autopilot mode.")
+		except:
+			self.client.apply_batch([carla.command.DestroyActor(x) for x in self.actor_list])
+
+#---------------------------------------------------------------------#
+#                                                                     #
+#---------------------------------------------------------------------#
