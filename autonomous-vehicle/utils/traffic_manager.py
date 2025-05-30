@@ -21,8 +21,8 @@ class GenerateTraffic:
                 self.vehicles_list = []
                 self.walkers_list = []
                 self.all_id = []
-                conn = ClientConnection(town="Town10HD_Opt")       
-                self.client, self.world = conn.connect()
+                self.conn = ClientConnection(town="Town10HD_Opt")       
+                self.client, self.world = self.conn.connect()
                 self.client.set_timeout(10.0)
 
                 self.synchronous_master = False
@@ -215,7 +215,7 @@ class GenerateTraffic:
                 for i in range(len(self.walkers_list)):
                         self.all_id.append(self.walkers_list[i]["con"])
                         self.all_id.append(self.walkers_list[i]["id"])
-                all_actors = self.world.get_actors(self.all_id)
+                self.all_actors = self.world.get_actors(self.all_id)
 
                 # wait for a tick to ensure client receives the last transform of the walkers we have just created
                 if asynch or not self.synchronous_master:
@@ -228,13 +228,11 @@ class GenerateTraffic:
                 self.world.set_pedestrians_cross_factor(percentagePedestriansCrossing)
                 for i in range(0, len(self.all_id), 2):
                         # start walker
-                        all_actors[i].start()
+                        self.all_actors[i].start()
                         # set walk to random point
-                        all_actors[i].go_to_location(self.world.get_random_location_from_navigation())
+                        self.all_actors[i].go_to_location(self.world.get_random_location_from_navigation())
                         # max speed
-                        all_actors[i].set_max_speed(float(walker_speed[int(i/2)]))
-
-                print('spawned %d vehicles and %d walkers, press Ctrl+C to exit.' % (len(self.vehicles_list), len(self.walkers_list)))
+                        self.all_actors[i].set_max_speed(float(walker_speed[int(i/2)]))
 
                 # Example of how to use Traffic Manager parameters
                 self.traffic_manager.global_percentage_speed_difference(30.0)
@@ -252,17 +250,51 @@ class GenerateTraffic:
 
 
         def generate_all(self):
-                trafficManager = GenerateTraffic()
-                trafficManager.generate_vehicles()
-                trafficManager.generate_walkers()
-                while True:
-                        if not asynch and self.synchronous_master:
-                                self.world.tick()
-                        else:
-                                self.world.wait_for_tick()
+                        try:
+                                self.generate_vehicles()
+                                self.generate_walkers()
+                                print('spawned %d vehicles and %d walkers, press Ctrl+C to exit.' % (len(self.vehicles_list), len(self.walkers_list)))
 
-                return
+                                while True:
+                                
+                                        if not asynch and self.synchronous_master:
+                                                self.world.tick()
+                                        else:
+                                                self.world.wait_for_tick()
+                        except KeyboardInterrupt:
+                                pass
+                        finally:
+
+                                # if not args.asynch and synchronous_master:
+                                #         settings = world.get_settings()
+                                #         settings.synchronous_mode = False
+                                #         settings.no_rendering_mode = False
+                                #         settings.fixed_delta_seconds = None
+                                #         world.apply_settings(settings)
+
+                                # print('\ndestroying %d vehicles' % len(vehicles_list))
+                                # client.apply_batch([carla.command.DestroyActor(x) for x in vehicles_list])
+
+                                # # stop walker controllers (list is [controller, actor, controller, actor ...])
+                                # for i in range(0, len(all_id), 2):
+                                #         all_actors[i].stop()
+
+                                # print('\ndestroying %d walkers' % len(walkers_list))
+                                # client.apply_batch([carla.command.DestroyActor(x) for x in all_id])
+
+                                # time.sleep(0.5)                                
         
+                                # for i in range(0, len(self.all_id), 2):
+                                #         self.all_actors[i].stop()
+
+                                self.conn.cleanup_all_actors()
+                                time.sleep(1)
+                                #self.client.reload_world() 
+                                while True:
+                                        try:
+                                                self.world.tick()
+                                        except:
+                                                self.world.wait_for_tick()      
 
 
 
@@ -271,7 +303,6 @@ if __name__ == '__main__':
 
     try:
         GenerateTraffic().generate_all()
-        
         
     except KeyboardInterrupt:
         pass
