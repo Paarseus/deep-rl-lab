@@ -11,7 +11,7 @@ import logging
 from numpy import random
 
 
-class SensorFactory(object):
+class SensorManager(object):
     """
     Class to simplify the creation of the different CARLA sensors
     """
