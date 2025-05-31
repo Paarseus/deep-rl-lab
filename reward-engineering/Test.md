@@ -5,206 +5,81 @@
 
 ---
 
-## 🧠 Goal
+# Expanded Reward Engineering Tables for CARLA Simulator
 
-Design a reward structure for a Gymnasium-compatible RL agent in CARLA that encourages:
-1. Safe, collision-free driving  
-2. Compliance with traffic rules (lane keeping, speed limits)  
-3. Efficient progress toward a predefined goal location  
+**Author:** Alexander Assal  
+**Date:** May 31, 2025  
 
-Sensors used (conceptually):
-- **Collision sensor** (`sensor.other.collision`) to detect any collisions.  
-- **Lane invasion sensor** (`sensor.other.lane_invasion`) to detect when the vehicle crosses lane markings.  
-- **Vehicle velocity** (via `ego_vehicle.get_velocity()`) to track speed.  
-- **Map/waypoint queries** (`world.get_map().get_waypoint(location)`) to compute distance to lane center and distance to goal.  
-- **(Optional)** IMU (`sensor.other.imu`) for smoothness/jerk, semantic segmentation camera (`sensor.camera.semantic_segmentation`) for pedestrian/traffic-light detection.
+Below are exhaustive reward tables covering driving events detectable via CARLA sensors or API queries. Each row lists an event, the CARLA detection method, and a suggested reward or penalty. New entries have been added to reward correct yielding behavior at stop signs and similar nuanced situations.
 
 ---
 
-## 🛣️ Key Events & Suggested Reward Values
+## Positive Rewards
 
-| Event                            | Description                                                | Reward                                           |
-|----------------------------------|------------------------------------------------------------|--------------------------------------------------|
-| **Reaching Goal**                | Agent arrives within 2 m of the goal location               | **+100** (episode terminates)                    |
-| **Progress Toward Goal**         | Reduction in Euclidean distance to goal since last step     | `+ (Δd / initial_distance) × 100`                 |
-| **Lane-Keeping (Centered)**      | Lateral distance to lane center ≤ 3 m: bonus proportional   | `+ (3.0 – dist_center)` (∈ [0, +3])               |
-| **Target-Speed Proximity**       | Current speed near 22 m/s: higher bonus when closer         | `+ max(0, 10 – |speed – 22|)` (∈ [0, +10])         |
-
-- **Δd**: previous_distance_to_goal – current_distance_to_goal  
-- **initial_distance**: distance from start to goal at episode start  
-
----
-
-## ❌ Negative Reward Events
-
-| Event                            | Description                                                | Reward                                           |
-|----------------------------------|------------------------------------------------------------|--------------------------------------------------|
-| **Collision**                    | Any collision detected by `sensor.other.collision`         | **–100** (episode terminates)                    |
-| **Lane Crossing**                | Crossing any lane marking (`sensor.other.lane_invasion`)   | **–50**                                          |
-| **Off-Road (dist_center > 3 m)** | Lateral distance to lane center exceeds 3 m                | **–50**                                          |
-| **Below Minimum Speed**          | Current speed < 15 m/s (when not stopped at red/etc.)      | **–50**                                          |
-| **Above Maximum Speed**          | Current speed > 25 m/s                                      | **–1** per timestep                              |
-| **Timeout**                      | Episode length exceeds MAX_TIMESTEPS (e.g., 7500 steps)     | **–100** (episode terminates)                    |
-
----
-
-## 🧪 Additional Considerations
-
-- **Smoothness (Optional)**  
-  - Use the IMU sensor (`sensor.other.imu`) to compute acceleration and jerk.  
-  - Penalize large jerk: for example, `– (|current_acceleration – previous_acceleration| / max_jerk) × 5`, clipped to a minimum of –5 per timestep.  
-  - Penalize abrupt steering changes: if steering angle rate > 30°/s, apply up to –5.
-
-- **Traffic-Light Compliance (Optional)**  
-  - Use a semantic segmentation camera (`sensor.camera.semantic_segmentation`) to identify red lights.  
-  - If approaching a red light and failing to stop before the line (detected via waypoint queries and camera), apply –20.  
-  - If correctly stopping at a red light for ≥1 s, bonus +5.
-
-- **Pedestrian Yielding (Optional)**  
-  - Detect pedestrians in crosswalks via semantic segmentation or semantic lidar.  
-  - If agent yields (speed < 0.5 m/s) when pedestrian is present in crosswalk: +10.  
-  - If agent passes within 1.5 m of pedestrian in crosswalk without stopping: –30.
-
-- **Waypoint Advancement (Optional)**  
-  - Precompute a route of waypoints from start to goal.  
-  - Each time the agent enters the next waypoint region: +5 per waypoint crossed.
+| Event                                           | CARLA Detection Method                                                                                      | Reward                                                |
+|-------------------------------------------------|-------------------------------------------------------------------------------------------------------------|-------------------------------------------------------|
+| **Reaching Goal**                               | `ego.get_transform().location.distance(goal) < 2`                                                           | **+100** (episode terminates)                         |
+| **Progress Toward Goal**                        | Δd = (prev_dist – curr_dist) via `ego.get_transform().location`                                              | `+ (Δd / initial_dist) × 100`                         |
+| **Lane-Keeping (Centered)**                     | `waypoint = world.get_map().get_waypoint(loc, project_to_road)`; `dist_center = loc.distance(waypoint)`    | `+ (3.0 – dist_center)`                                |
+| **Target-Speed Proximity**                      | `speed = √(v.x² + v.y² + v.z²)` from `ego.get_velocity()`                                                    | `+ max(0, 10 – |speed – 22|)`                          |
+| **Smooth Acceleration (Low Jerk)**              | IMU sensor: compute `jerk = (a_t – a_prev)/dt`; if `|jerk| < threshold`                                      | **+2** per timestep                                    |
+| **Steady Steering (Low Steering Rate)**         | Record `steering_rate = |(steer – steer_prev)/dt|`; if < 15°/s                                               | **+1** per timestep                                    |
+| **Maintaining Safe Following Distance**         | Radar sensor: `distance_to_front > safe_distance` (e.g., > 5 m)                                               | **+2** per second                                      |
+| **Proper Stop at Stop Sign**                    | Map API: detect stop sign waypoint; `speed < 0.5` inside stop zone for ≥2 s                                  | **+5**                                                  |
+| **Yielding to Vehicle at Stop Sign**            | Map API: detect stop sign + radar/semantic-lidar: other vehicle stopped first; `ego_speed < 0.5` until it departs | **+5**                                                  |
+| **Proper Stop at Red Light**                    | Semantic camera: detect red-light pixels; waypoint: compute `dist_to_stop_line > 0` while `speed < 0.5` for ≥1 s | **+5**                                                  |
+| **Yielding to Pedestrian**                      | Semantic camera or SemanticLidar: detect pedestrian in crosswalk; `speed < 0.5` while pedestrian present     | **+10**                                                 |
+| **Correct Lane Change**                         | Map API: `prev_waypoint.lane_id != curr_waypoint.lane_id` & not triggered by `lane_invasion_sensor`         | **+5** per event                                        |
+| **Efficient Intersection Crossing**             | Map API: time spent in intersection area (defined by waypoints) ≤ threshold                                   | **+10**                                                 |
+| **Merging Safely onto Road**                    | Radar: detect no vehicle within merge gap; ego changes lane successfully                                     | **+5**                                                  |
+| **Maintaining Speed Limit Zone**                | If `speed` stays ≤ zone’s speed limit (map-provided) for ≥3 s                                                 | **+3** per interval (e.g., per 3 seconds)               |
+| **Correct U-Turn (in Allowed Zone)**            | Map tag: detect U-turn allowed; ego performs ~180° turn maneuver detected via heading change                 | **+5**                                                  |
+| **Navigating Roundabout Correctly**             | Map tag: detect roundabout entry waypoint; ego exits onto desired exit lane                                  | **+5**                                                  |
+| **Staying in Right Lane on Highway**            | Map lane type: detect multiple-lane road; ego remains in rightmost lane until passing                        | **+2** per second                                       |
+| **Safe Deceleration for Obstacle Ahead**        | Radar: detect static object < 10 m ahead; reduce speed smoothly (no brakes > 0.7)                             | **+3**                                                  |
+| **Using Turn Signal Correctly** *(if simulated)*| Control signals: check `control.hand_brake == False` and turn indicator active during lane change            | **+2** per correct usage                                |
 
 ---
 
-## 🗂️ Notes for Implementation
+## Negative Rewards
 
-1. **Sensor Registration**  
-   - In `CarlaEnv.__init__()`, create one `SensorInterface` instance.  
-   - For each required sensor, call:  
-     ```yaml
-     SensorManager.spawn(
-       name:            "<sensor_name>",
-       attributes:      { "type": "<blueprint>", "transform": "<x,y,z,roll,pitch,yaw>", … },
-       interface:       sensor_interface,
-       parent:          ego_vehicle
-     )
-     ```
-   - Example:  
-     ```yaml
-     name: "collision_sensor"
-     attributes:
-       type: "sensor.other.collision"
-       transform: "0,0,0,0,0,0"
-     ```
-
-2. **Pulling Sensor Data**  
-   - In each `step()`, after `world.tick()`, call:  
-     ```python
-     sensor_data = self.sensor_interface.get_data()
-     ```
-   - Check if `"collision_sensor"` or `"lane_invasion_sensor"` are keys in `sensor_data` to detect events.
-   - Retrieve streaming data (IMU, GNSS, semantic camera) via their sensor names as needed.
-
-3. **Reward Calculation Order**  
-   1. **Collision** → apply **–100**, set `done=True`, return immediately.  
-   2. **Lane Crossing** → if present, apply **–50**; else compute lane-keeping bonus.  
-   3. **Speed Regulation** → apply **–50** if speed < 15 m/s; **–1** per step if speed > 25 m/s; add proximity bonus for closeness to 22 m/s.  
-   4. **Distance to Lane Center** → same as lane-keeping bonus/penalty above.  
-   5. **Progress Toward Goal** → compute `delta_d`; if positive, apply `(delta_d / initial_distance) × 100`; if `distance < 2 m`, apply **+100** and terminate.  
-   6. **Time Penalty** → apply **–1** per step; if `elapsed_steps ≥ MAX_TIMESTEPS`, apply **–100**, set `done=True`.  
-
-4. **Observation Design (Example)**  
-   - A simple observation vector:  
-     1. `current_speed` (scalar)  
-     2. `distance_to_goal` (scalar)  
-     3. `distance_to_center` (scalar)  
-   - Optionally augment with semantic segmentation image or GNSS coordinates.
-
-5. **Episode Reset**  
-   - Destroy sensors (`sensor_interface.destroy()`) and ego vehicle; respawn both.  
-   - Reset counters: `elapsed_steps=0`, `previous_distance_to_goal=None`, `initial_distance_to_goal=None`.
-
-6. **Tuning Recommendations**  
-   - Adjust reward magnitudes for stable learning:  
-     - If agent rarely reaches goal, increase **+100** to **+200**.  
-     - If lane-keeping bonus is too small, multiply `(3 – dist_center)` by 2 or 5.  
-     - If time penalty is too weak, increase from **–1** to **–2** per step.  
+| Event                                                | CARLA Detection Method                                                                                                        | Penalty                               |
+|------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|---------------------------------------|
+| **Collision (Any Actor)**                            | `sensor.other.collision` event                                                                                                 | **–100** (episode terminates)         |
+| **Collision with Pedestrian**                        | `collision_sensor.parsed_data[0].type == 'walker.pedestrian.*'`                                                                 | **–150**                              |
+| **Collision with Vehicle**                           | `collision_sensor.parsed_data[0].type.startswith('vehicle.')`                                                                   | **–100**                              |
+| **Collision with Static Object**                     | `collision_sensor.parsed_data[0].type` not walker or vehicle                                                                     | **–100**                              |
+| **Lane Crossing (Any Marking)**                      | `sensor.other.lane_invasion` event                                                                                              | **–50**                               |
+| **Off-Road (dist_center > 3 m)**                     | `waypoint = world.get_map().get_waypoint(loc, project_to_road)`; `dist_center = loc.distance(waypoint)` > 3 m                    | **–50**                               |
+| **Below Minimum Speed (< 15 m/s)**                   | `speed = ego.get_velocity()` < 15 m/s                                                                                              | **–50**                               |
+| **Above Maximum Speed (> 25 m/s)**                   | `speed = ego.get_velocity()` > 25 m/s                                                                                              | **–1** per timestep                   |
+| **Hard Braking**                                     | `brake > 0.7` immediately after `throttle > 0.5` within 0.5 s                                                                     | **–10**                               |
+| **Hard Acceleration**                                | `throttle > 0.7` immediately after `brake > 0.5` or `speed < 1`                                                                    | **–10**                               |
+| **Abrupt Steering**                                  | `steering_rate = |(steer – steer_prev)/dt|` > 30°/s                                                                                | **–5**                                |
+| **High Jerk (|jerk| > threshold)**                   | IMU sensor: `jerk = (a_t – a_prev)/dt`; if `|jerk| > max_jerk`                                                                     | **–5**                                |
+| **Stalling (speed < 0.5 for > 5 s)**                 | Count consecutive timesteps where `speed < 0.5` while not at red/stop sign                                                          | **–10**                               |
+| **Reversing on Road**                                | `ego.get_control().reverse == True` while on main road lane                                                                        | **–20**                               |
+| **Driving Wrong Direction**                          | `waypoint.road_id != next_waypoint.road_id` and heading differs by > 150°                                                          | **–50**                               |
+| **Illegal Lane Change (Cross Double Yellow)**        | `lane_invasion_sensor` indicates crossing solid center line with `lane_type == 'Solid'`                                              | **–50**                               |
+| **Tailgating (dist_front < 2 m)**                    | Radar sensor: `distance_to_front < 2` while `speed > 5`                                                                             | **–10** per second                    |
+| **Blocking Intersection**                            | Ego remains inside intersection region (map waypoints) for > 5 s while cross traffic present (semantic camera)                          | **–20**                               |
+| **Running Red Light**                                | Semantic camera: red-light pixels; `dist_to_stop_line < 0` and `speed > 1`                                                             | **–20**                               |
+| **Running Stop Sign**                                | Map API: stop-sign waypoint; `dist_to_stop_sign < 0` and `speed > 1`                                                                   | **–20**                               |
+| **Failing to Yield to Vehicle at Stop Sign**         | Map API: stop-sign waypoint; radar/semantic-lidar: other vehicle arrived first; ego enters junction (alt waypoint) before yielding     | **–20**                               |
+| **Passing Pedestrian Without Yield**                 | Semantic camera or semantic lidar: pedestrian within 1.5 m ahead; `speed ≥ 0.5`                                                           | **–30**                               |
+| **Driving on Sidewalk**                              | Semantic segmentation: detect sidewalk class under ego’s bounding box                                                                  | **–50**                               |
+| **Hitting Pedestrian**                               | `collision_sensor` & `other_actor` type is walker                                                                                      | **–150**                              |
+| **Hitting Vehicle**                                  | `collision_sensor` & `other_actor` type starts with “vehicle.”                                                                          | **–100**                              |
+| **Hitting Static Object (e.g., pole)**               | `collision_sensor` & actor type not vehicle/pedestrian                                                                                  | **–100**                              |
+| **Excessive U-Turn (in No-U-Turn Zone)**             | Map tag: no-U-turn waypoint; ego heading change ~180° within restricted area                                                            | **–50**                               |
+| **Parking on Road (speed < 0.5 in Moving Lane)**     | `speed < 0.5` while map lane traffic lights are green or no stop condition                                                                | **–20**                               |
+| **Speeding in School Zone**                          | Map tag: “school_zone” waypoint; `speed > zone_speed_limit`                                                                               | **–30**                               |
+| **Illegal Overtake (Entering Oncoming Lane)**        | Map: detect opposite lane via waypoint; ego crosses center into oncoming lane                                                             | **–50**                               |
+| **Excessive Loitering (dist_to_goal Increases >5 s)**| Track `distance_to_goal` over time; if increases continuously for >5 s                                                                      | **–10** per second                    |
+| **Excessive Idle (speed < 0.5, No Red/Stop)**        | Count consecutive timesteps; if > 3 s and not in red/stop zone                                                                               | **–5** per second                     |
+| **Traffic Cone / Debris Hit**                        | `collision_sensor.parsed_data[0].type == 'static.prop.trafficcone'`                                                                        | **–20**                               |
+| **Wrong Parking Maneuver (in Parking Lot)**          | Map: parking lot region; ego moves outside designated slot waypoint                                                                          | **–20**                               |
+| **Environmental Hazard Drive-Through (e.g., water)** | Semantic segmentation: detect water/obstacle ahead; ego drives through                                                                       | **–20**                               |
+| **High-Curve Speeding**                              | Map: detect sharp curve waypoint (curvature > threshold); `speed > curve_safe_speed`                                                           | **–20**                               |
 
 ---
-
-## 7. Reward Summary Tables
-
-### Positive Rewards
-
-| Condition                           | Reward                                                    |
-|-------------------------------------|-----------------------------------------------------------|
-| Reaching Goal                       | **+100** (ends episode)                                   |
-| Progress Toward Goal                | `+ (Δd / initial_distance) × 100` (only if Δd > 0)         |
-| Lane-Keeping (dist_center ≤ 3 m)    | `+ (3 – dist_center)` (∈ [0, +3])                          |
-| Target-Speed Proximity (|speed–22|) | `+ max(0, 10 – |speed – 22|)` (∈ [0, +10])                 |
-| (Optional) Stop at Red Light        | +5 (if fully stopped ≥1 s before red light)              |
-| (Optional) Yield to Pedestrian      | +10 (if stopped when pedestrian in crosswalk)            |
-| (Optional) Waypoint Advancement     | +5 per waypoint crossed along precomputed route          |
-
-### Negative Rewards
-
-| Condition                                 | Reward                          |
-|-------------------------------------------|---------------------------------|
-| Collision                                 | **–100** (ends episode)         |
-| Lane Crossing / Off-Road (dist_center >3) | **–50**                         |
-| Speed < MIN_SPEED (15 m/s)                | **–50**                         |
-| Speed > MAX_SPEED (25 m/s)                | **–1** per step                 |
-| Timeout (elapsed_steps ≥ 7500)            | **–100** (ends episode)         |
-| (Optional) High Jerk or Abrupt Steering   | Up to –5 per event              |
-| (Optional) Running Red Light              | **–20**                         |
-| (Optional) Passing Pedestrian Without Yield| **–30**                        |
-
----
-
-## 8. Integration Notes
-
-- **Sensor Mapping:**  
-  - `collision_sensor` → collision events.  
-  - `lane_invasion_sensor` → lane crossings.  
-  - IMU (`imu_sensor`) → acceleration & jerk (optional smoothness).  
-  - GNSS (`gnss_sensor`) or direct `get_transform()` → position for distance-to-goal.  
-  - Semantic segmentation (`sem_seg_camera`) → pedestrian/traffic-light detection (optional).
-
-- **Step-by-Step Flow:**  
-  1. **Apply control** (steer, throttle, brake).  
-  2. **Tick CARLA** (`world.tick()`).  
-  3. **Retrieve** `sensor_data = sensor_interface.get_data()`.  
-  4. **Check collision** → –100 & terminate.  
-  5. **Check lane invasion** → –50 or lane-keeping bonus.  
-  6. **Compute speed-based** penalties/bonuses.  
-  7. **Compute progress-to-goal** reward; if reached → +100 & terminate.  
-  8. **Apply time penalty** (–1); if timeout → –100 & terminate.  
-  9. **Return** `(observation, reward, done, info)`.
-
-- **Observations & Actions:**  
-  - **Action space:**  
-    - Continuous: `[steer ∈ (–1,1), throttle ∈ (0,1), brake ∈ (0,1)]`.  
-    - Discrete: map indices to predefined controls.  
-  - **Observation space example:**  
-    ```  
-    [ current_speed, 
-      distance_to_goal, 
-      distance_to_center ]  
-    ```
-
-- **Episode Reset:**  
-  - Destroy sensors & ego vehicle; respawn both.  
-  - Reset counters: `elapsed_steps = 0`, `previous_distance_to_goal = None`, `initial_distance_to_goal = None`.
-
----
-
-## 9. References
-
-1. **CARLA Simulator Documentation (Python API):**  
-   https://carla.readthedocs.io/en/latest/python_api/  
-
-2. **Gymnasium API Reference:**  
-   https://gymnasium.farama.org/  
-
-3. **CARLA Sensor Tutorials:**  
-   - https://carla.readthedocs.io/en/latest/tuto_sensors/  
-   - https://carla.readthedocs.io/en/latest/tuto_Gym_env/  
-
-4. **Global Route Planning (Optional):**  
-   - `agents/navigation/global_route_planner.py`  
-   - `agents/navigation/global_route_planner_dao.py`
