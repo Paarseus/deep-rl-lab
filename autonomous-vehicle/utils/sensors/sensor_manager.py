@@ -1,9 +1,8 @@
 import time
 
 import carla
-from sensor_config import *
 
-from connection_manager import ClientConnection
+from sensor_config import *
 from sensor import *
 
 import argparse
