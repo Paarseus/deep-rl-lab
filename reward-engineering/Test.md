@@ -1,7 +1,7 @@
 # Reward Engineering for CARLA Simulator + Gymnasium
 
-*Author: [Your Name]*  
-*Date: [YYYY-MM-DD]*
+*Author: Alexander Assal*  
+*Date: 31 May 2025*
 
 ---
 
@@ -39,9 +39,7 @@
 
 ## 1. Introduction
 
-Reinforcement Learning (RL) in the CARLA Simulator requires carefully designed reward functions to guide the agent toward safe, efficient, and rule-abiding driving behavior. This document outlines a **meticulous**, **CARLA-specific** reward engineering strategy, including sensor usage, event detection, and exact numeric scaling. All pseudocode and examples assume a Gymnasium-compatible RL environment wrapping CARLA.  
-
-> **Note:** Replace `[Your Name]` and `[YYYY-MM-DD]` with actual author name and date.  
+Reinforcement Learning (RL) in the CARLA Simulator requires carefully designed reward functions to guide the agent toward safe, efficient, and rule-abiding driving behavior. This document outlines  reward engineering strategy for **Carla** including sensor usage, event detection, and exact numeric scaling. All pseudocode and examples assume a Gymnasium-compatible RL environment wrapping CARLA.  
 
 ---
 
@@ -50,10 +48,10 @@ Reinforcement Learning (RL) in the CARLA Simulator requires carefully designed r
 ### 2.1 CARLA + Gymnasium Integration
 
 1. **CARLA Version**:  
-   - Tested with CARLA v0.9.14 (modify versions accordingly).  
+   - Tested with CARLA v0.10.0
 2. **Gymnasium Wrapper**:  
    - Use a custom environment class `CarlaEnv(gym.Env)` that implements `reset()`, `step(action)`, `render()`, and `close()`.  
-   - The `step()` method must return `(observation, reward, done, info)` consistent with Gymnasium API.  
+   - The `step()` method must return `(observation, reward, terminated, truncated, info)` consistent with Gymnasium API.  
 3. **Episode Configuration**:  
    - **Spawn Points**: Predefined spawn locations for agent & NPC traffic.  
    - **Weather/Time of Day**: Fixed or randomized; affects visibility but not reward.  
