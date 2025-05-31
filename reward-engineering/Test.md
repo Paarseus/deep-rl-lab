@@ -9,334 +9,202 @@
 
 Design a reward structure for a Gymnasium-compatible RL agent in CARLA that encourages:
 1. Safe, collision-free driving  
-2. Compliance with traffic rules (lane keeping, speed limits, pedestrian and traffic-light respect)  
+2. Compliance with traffic rules (lane keeping, speed limits)  
 3. Efficient progress toward a predefined goal location  
 
-Sensors used:
-- **Collision** (`sensor.other.collision`)  
-- **Lane invasion** (`sensor.other.lane_invasion`)  
-- **Vehicle velocity** via `ego_vehicle.get_velocity()`  
-- **Map/waypoint queries** via `world.get_map().get_waypoint(location)`  
-- **IMU** (`sensor.other.imu`) for smoothness/jerk  
-- **GNSS** (`sensor.other.gnss`) for approximate location  
-- **Semantic segmentation camera** (`sensor.camera.semantic_segmentation`) for detecting pedestrians and traffic lights  
+Sensors used (conceptually):
+- **Collision sensor** (`sensor.other.collision`) to detect any collisions.  
+- **Lane invasion sensor** (`sensor.other.lane_invasion`) to detect when the vehicle crosses lane markings.  
+- **Vehicle velocity** (via `ego_vehicle.get_velocity()`) to track speed.  
+- **Map/waypoint queries** (`world.get_map().get_waypoint(location)`) to compute distance to lane center and distance to goal.  
+- **(Optional)** IMU (`sensor.other.imu`) for smoothness/jerk, semantic segmentation camera (`sensor.camera.semantic_segmentation`) for pedestrian/traffic-light detection.
 
 ---
 
-## 🛣️ Directory & File Structure
+## 🛣️ Key Events & Suggested Reward Values
 
-/project_root/
-│
-├── envs/
-│   └── carla_env.py            # Gymnasium wrapper (“CarlaEnv”)
-│
-├── sensors/
-│   ├── Sensor.py               # BaseSensor, CarlaSensor, specific sensor classes
-│   ├── Sensor_interface.py     # Buffers continuous and event-based data
-│   └── Sensor_manager.py       # spawn(name, attributes, interface, parent)
-│
-├── Config.py                   # Simulation & reward constants
-├── reward_engineering.md       # ← (This file)
-├── Traffic_config.py           # Traffic spawn parameters
-├── Traffic_manager.py          # Spawns NPC traffic
-└── Connection_manager.py       # CARLA client connection
+| Event                            | Description                                                | Reward                                           |
+|----------------------------------|------------------------------------------------------------|--------------------------------------------------|
+| **Reaching Goal**                | Agent arrives within 2 m of the goal location               | **+100** (episode terminates)                    |
+| **Progress Toward Goal**         | Reduction in Euclidean distance to goal since last step     | `+ (Δd / initial_distance) × 100`                 |
+| **Lane-Keeping (Centered)**      | Lateral distance to lane center ≤ 3 m: bonus proportional   | `+ (3.0 – dist_center)` (∈ [0, +3])               |
+| **Target-Speed Proximity**       | Current speed near 22 m/s: higher bonus when closer         | `+ max(0, 10 – |speed – 22|)` (∈ [0, +10])         |
+
+- **Δd**: previous_distance_to_goal – current_distance_to_goal  
+- **initial_distance**: distance from start to goal at episode start  
 
 ---
 
-## ⚙️ Configuration Parameters (`Config.py`)
-
-All constants below appear exactly in `Config.py`. “`Config.XYZ`” refers to these names directly.
-
-```python
-# Connection & Episode
-HOST = "localhost"
-PORT = 2000
-TIMEOUT = 30.0
-EPISODE_LENGTH = 120        # seconds per episode
-MAX_TIMESTEPS = 7500        # steps per episode
-
-# Vehicle & Traffic
-CAR_NAME = 'vehicle.mini.cooper'
-NUMBER_OF_VEHICLES = 10
-NUMBER_OF_PEDESTRIANS = 30
-
-# Action Space
-CONTINUOUS_ACTION = True    # True = continuous [steer, throttle, brake]; False = discrete
-
-# Camera (for pedestrian/traffic-light detection)
-RGB_CAMERA = 'sensor.camera.rgb'
-SEMANTIC_CAMERA = 'sensor.camera.semantic_segmentation'
-IMAGE_WIDTH = 160
-IMAGE_HEIGHT = 80
-CAMERA_FOV = 125
-
-# Reward Parameters
-TARGET_SPEED = 22.0                # m/s
-MAX_SPEED = 25.0                   # m/s
-MIN_SPEED = 15.0                   # m/s
-MAX_DISTANCE_FROM_CENTER = 3.0     # meters
-
-COLLISION_REWARD = -100            # flat collision penalty
-LANE_DEVIATION_REWARD = -50        # flat penalty for crossing lane
-SLOW_SPEED_REWARD = -50            # penalty for speed < MIN_SPEED
-SPEED_PENALTY = -1                 # per-step penalty if speed > MAX_SPEED
-
-PEDESTRIAN_YIELD_REWARD = +10      # reward for yielding to pedestrian in crosswalk
-PEDESTRIAN_VIOLATION_PENALTY = -30 # penalty for passing close to pedestrian without stopping
-TRAFFIC_LIGHT_STOP_REWARD = +5     # reward for stopping at red light properly
-TRAFFIC_LIGHT_RUN_PENALTY = -20    # penalty for running a red light
-
-
-⸻
-
-🚦 Sensor Setup & Data Retrieval
-
-1. Sensors Used
-	•	Collision (sensor.other.collision)
-	•	Event-based: triggers on any collision
-	•	Parsed data: [other_actor, impulse_value]
-	•	LaneInvasion (sensor.other.lane_invasion)
-	•	Event-based: triggers when crossing any lane marking
-	•	Parsed data: [transform, crossed_lane_markings]
-	•	Imu (sensor.other.imu)
-	•	Streaming: returns [accX, accY, accZ, gyroX, gyroY, gyroZ, compass]
-	•	Used for smoothness/jerk calculation
-	•	Gnss (sensor.other.gnss)
-	•	Streaming: returns [latitude, longitude, altitude]
-	•	Approximate global position; mostly use ego_vehicle.get_transform().location
-	•	CameraSemanticSegmentation (sensor.camera.semantic_segmentation)
-	•	Streaming: returns H×W×3 uint8 image
-	•	Used to detect pedestrian pixels and traffic-light pixels
-
-2. Spawning & Registering
-
-Inside CarlaEnv.__init__():
-	1.	Instantiate self.sensor_interface = SensorInterface().
-	2.	Spawn ego vehicle with CARLA API.
-	3.	Spawn each sensor with Sensor_manager.spawn(name, attributes, self.sensor_interface, self.ego_vehicle):
-	•	Collision Sensor
-
-name: "collision_sensor"
-attributes:
-  type: "sensor.other.collision"
-  transform: "0,0,0,0,0,0"
-
-
-	•	LaneInvasion Sensor
-
-name: "lane_invasion_sensor"
-attributes:
-  type: "sensor.other.lane_invasion"
-  transform: "0,0,0,0,0,0"
-
-
-	•	IMU Sensor
-
-name: "imu_sensor"
-attributes:
-  type: "sensor.other.imu"
-  transform: "0,0,0,0,0,0"
-
-
-	•	GNSS Sensor
-
-name: "gnss_sensor"
-attributes:
-  type: "sensor.other.gnss"
-  transform: "0,0,2,0,0,0"
-
-
-	•	Semantic Segmentation Camera
-
-name: "sem_seg_camera"
-attributes:
-  type: Config.SEMANTIC_CAMERA               # "sensor.camera.semantic_segmentation"
-  transform: "1.5,0,2.4,0,0,0"
-  image_size_x: str(Config.IMAGE_WIDTH)
-  image_size_y: str(Config.IMAGE_HEIGHT)
-  fov: str(Config.CAMERA_FOV)
-
-
-
-3. Pulling Sensor Data
-
-In CarlaEnv.step(action), after world.tick():
-
-sensor_data = self.sensor_interface.get_data()
-
-	•	Event-based sensors appear only if an event occurred since the last call (e.g., "collision_sensor", "lane_invasion_sensor").
-	•	Streaming sensors (IMU, GNSS, semantic camera) provide one reading each timestep.
-
-⸻
-
-🎯 High-Level Objectives
-	1.	Primary Objective: Drive from a start location to a predefined goal location (carla.Location).
-	•	Goal reached if ego_vehicle.get_transform().location.distance(goal_location) < 2 m.
-	2.	Secondary Objectives:
-	•	Avoid collisions with any actor.
-	•	Maintain lane discipline (stay near lane center, avoid crossing lane markings).
-	•	Regulate speed: remain near TARGET_SPEED, avoid below MIN_SPEED or above MAX_SPEED.
-	•	Minimize lateral drift (maintain dist_center ≤ MAX_DISTANCE_FROM_CENTER).
-	•	Efficient progress (minimize time/steps).
-	•	Respect pedestrians at crosswalks.
-	•	Obey traffic lights (stop at red).
-	3.	Tertiary Objectives (Trade-Offs):
-	•	Smoothness: penalize high jerk (via IMU) and abrupt steering.
-
-⸻
-
-🔢 Reward Components
-
-1. Collision Detection
-	•	Sensor: "collision_sensor" from sensor.other.collision.
-	•	When triggered: apply –100 (Config.COLLISION_REWARD), set done = True, return immediately.
-
-2. Lane-Keeping & Deviation
-	•	Sensor: "lane_invasion_sensor" from sensor.other.lane_invasion + map API.
-	•	If "lane_invasion_sensor" in sensor_data:
-	•	Penalty: –50 (Config.LANE_DEVIATION_REWARD).
-	•	Else:
-	•	Compute dist_center via:
-
-waypoint = world.get_map().get_waypoint(current_loc, project_to_road=True)
-center_loc = waypoint.transform.location
-dist_center = current_loc.distance(center_loc)
-
-
-	•	If dist_center ≤ Config.MAX_DISTANCE_FROM_CENTER (3 m):
-	•	Bonus: Config.MAX_DISTANCE_FROM_CENTER – dist_center (∈ [0, 3]).
-	•	If dist_center > Config.MAX_DISTANCE_FROM_CENTER:
-	•	Penalty: –50 (Config.LANE_DEVIATION_REWARD).
-
-3. Speed Regulation
-	•	Sensor: None (use ego_vehicle.get_velocity()).
-	•	Compute: current_speed = √(v.x² + v.y² + v.z²) (m/s).
-	•	Penalties & Bonuses:
-	1.	If current_speed < Config.MIN_SPEED (15 m/s):
-	•	Penalty: –50 (Config.SLOW_SPEED_REWARD).
-	2.	If current_speed > Config.MAX_SPEED (25 m/s):
-	•	Penalty: –1 per timestep (Config.SPEED_PENALTY).
-	3.	Proximity to TARGET_SPEED (22 m/s):
-	•	speed_error = |current_speed – Config.TARGET_SPEED|.
-	•	Bonus: max(0, 10 – speed_error) (∈ [0, 10]).
-
-4. Distance to Lane Center
-	•	Sensor: None (map API, same as lane-keeping).
-	•	Reward/Penalty: identical to lane-keeping logic above (Section 2).
-
-5. Progress Toward Goal
-	•	Sensor: None (use ego_vehicle.get_transform().location), GNSS can supplement.
-	•	On first step:
-
-prev_dist = current_loc.distance(goal_location)
-init_dist = prev_dist
-
-
-	•	Each step:
-
-cur_dist = current_loc.distance(goal_location)
-delta_d = prev_dist – cur_dist
-if delta_d > 0:
-    progress_reward = (delta_d / init_dist) * 100.0
-    reward += progress_reward
-prev_dist = cur_dist
-
-
-	•	If cur_dist < 2 m:
-	•	Bonus: +100 (Config.EPISODE_LENGTH?), set done = True.
-
-6. Time/Efficiency
-	•	Sensor: None (internal self.elapsed_steps).
-	•	Per-step penalty: –1 (Config.SPEED_PENALTY).
-	•	If self.elapsed_steps ≥ Config.MAX_TIMESTEPS:
-	•	Penalty: –100, set done = True.
-
-7. Pedestrian Yielding
-	•	Sensor: "sem_seg_camera" from sensor.camera.semantic_segmentation or "semantic_lidar".
-	•	If a pedestrian is present in the crosswalk near the ego vehicle (within ~5 m) and current_speed < 0.5 m/s:
-	•	Reward: +10 (Config.PEDESTRIAN_YIELD_REWARD).
-	•	If ego vehicle passes within 1.5 m of a pedestrian in crosswalk at current_speed ≥ 0.5 m/s:
-	•	Penalty: –30 (Config.PEDESTRIAN_VIOLATION_PENALTY).
-
-8. Traffic-Light Compliance
-	•	Sensor: "sem_seg_camera" (semantic segmentation) to detect red/green light pixels, plus map-based stop-line distance check.
-	•	If ego vehicle stops (speed < 0.5 m/s) before the stop line at a red light for ≥1 s:
-	•	Reward: +5 (Config.TRAFFIC_LIGHT_STOP_REWARD).
-	•	If ego vehicle crosses the stop line at a red light with current_speed > 1 m/s:
-	•	Penalty: –20 (Config.TRAFFIC_LIGHT_RUN_PENALTY).
-
-⸻
-
-📊 Reward Summary Tables
-
-Positive Rewards
-
-Condition	Reward	Description
-Reaching Goal	+100	Within 2 m of goal; episode ends.
-Progress Toward Goal	+ (Δd / initial_distance) × 100	Proportional to distance reduction each step.
-Lane-Keeping (dist_center ≤ 3 m)	+ (3 – dist_center) (0 to +3)	More bonus when closer to lane center.
-Target-Speed Proximity (	speed – 22	)
-Yielding to Pedestrian in Crosswalk	+10	Stopping when pedestrian present in crosswalk.
-Stopping Properly at Red Light (≥1 s before stop line)	+5	Comes to full stop (speed < 0.5) at red light.
-
-Negative Rewards
-
-Condition	Reward	Description
-Collision	–100	Any collision detected; episode ends.
-Lane Crossing / Off-Road (dist_center > 3 m)	–50	Crossing lane marking or drifting off lane.
-Speed < MIN_SPEED (15 m/s)	–50	Driving too slowly (unless required).
-Speed > MAX_SPEED (25 m/s)	–1 per step	Over-speeding penalty each timestep.
-Passing Pedestrian Without Yield (≤1.5 m)	–30	Passing too close to pedestrian without stopping.
-Running Red Light	–20	Crossing stop line at red light with speed > 1 m/s.
-Timeout (elapsed_steps ≥ 7500)	–100	Episode ends due to exceeding max timesteps.
-
-
-⸻
-
-📝 Integration Notes
-	1.	Pulling Sensor Data:
-	•	Call sensor_data = self.sensor_interface.get_data() each step().
-	•	Check presence of "collision_sensor", "lane_invasion_sensor" for events.
-	•	Retrieve "imu_sensor", "gnss_sensor", "sem_seg_camera" values as needed.
-	2.	Reward Calculation Order (in step()):
-	1.	Collision → –100, done=True, return.
-	2.	Lane Crossing → –50 or lane-keeping bonus (up to +3).
-	3.	Speed Regulation → –50 if < 15 m/s; –1 if > 25 m/s; + up to +10 for closeness to 22 m/s.
-	4.	Distance to Lane Center → same as lane-keeping above.
-	5.	Progress Toward Goal → normalized ×100; if within 2 m → +100, done=True.
-	6.	Pedestrian Yielding → +10 if stopping when pedestrian in crosswalk; –30 if passing too close at ≥0.5 m/s.
-	7.	Traffic-Light Compliance → +5 if correctly stopped at red; –20 if running red.
-	8.	Time Penalty → –1 per timestep; if elapsed_steps ≥ MAX_TIMESTEPS → –100, done=True.
-	9.	Return (observation, reward, done, info).
-	3.	Observation Design Example:
-
-[ current_speed, 
-  distance_to_goal, 
-  distance_to_center ]
-
-	•	Extend with semantic segmentation (sem_seg_camera) or GNSS as needed.
-
-	4.	Episode Reset:
-	•	Destroy sensors: self.sensor_interface.destroy().
-	•	Destroy ego vehicle: self.ego_vehicle.destroy().
-	•	Respawn vehicle and sensors.
-	•	Reset: self.elapsed_steps = 0, prev_dist = None, init_dist = None.
-	5.	Tuning Suggestions:
-	•	Increase +100 goal reward if agent struggles to reach it.
-	•	Multiply lane-keeping bonus (3 – dist_center) by a factor (e.g., 5) if too weak.
-	•	Increase time penalty to –2 per step if agent loiters.
-
-⸻
-
-📚 References
-	1.	CARLA Python API Documentation:
-https://carla.readthedocs.io/en/latest/python_api/
-	2.	Gymnasium API:
-https://gymnasium.farama.org/
-	3.	CARLA Sensor Tutorials:
-	•	https://carla.readthedocs.io/en/latest/tuto_sensors/
-	•	https://carla.readthedocs.io/en/latest/tuto_Gym_env/
-	4.	Global Route Planning (if needed):
-	•	agents/navigation/global_route_planner.py
-	•	agents/navigation/global_route_planner_dao.py
-
+## ❌ Negative Reward Events
+
+| Event                            | Description                                                | Reward                                           |
+|----------------------------------|------------------------------------------------------------|--------------------------------------------------|
+| **Collision**                    | Any collision detected by `sensor.other.collision`         | **–100** (episode terminates)                    |
+| **Lane Crossing**                | Crossing any lane marking (`sensor.other.lane_invasion`)   | **–50**                                          |
+| **Off-Road (dist_center > 3 m)** | Lateral distance to lane center exceeds 3 m                | **–50**                                          |
+| **Below Minimum Speed**          | Current speed < 15 m/s (when not stopped at red/etc.)      | **–50**                                          |
+| **Above Maximum Speed**          | Current speed > 25 m/s                                      | **–1** per timestep                              |
+| **Timeout**                      | Episode length exceeds MAX_TIMESTEPS (e.g., 7500 steps)     | **–100** (episode terminates)                    |
+
+---
+
+## 🧪 Additional Considerations
+
+- **Smoothness (Optional)**  
+  - Use the IMU sensor (`sensor.other.imu`) to compute acceleration and jerk.  
+  - Penalize large jerk: for example, `– (|current_acceleration – previous_acceleration| / max_jerk) × 5`, clipped to a minimum of –5 per timestep.  
+  - Penalize abrupt steering changes: if steering angle rate > 30°/s, apply up to –5.
+
+- **Traffic-Light Compliance (Optional)**  
+  - Use a semantic segmentation camera (`sensor.camera.semantic_segmentation`) to identify red lights.  
+  - If approaching a red light and failing to stop before the line (detected via waypoint queries and camera), apply –20.  
+  - If correctly stopping at a red light for ≥1 s, bonus +5.
+
+- **Pedestrian Yielding (Optional)**  
+  - Detect pedestrians in crosswalks via semantic segmentation or semantic lidar.  
+  - If agent yields (speed < 0.5 m/s) when pedestrian is present in crosswalk: +10.  
+  - If agent passes within 1.5 m of pedestrian in crosswalk without stopping: –30.
+
+- **Waypoint Advancement (Optional)**  
+  - Precompute a route of waypoints from start to goal.  
+  - Each time the agent enters the next waypoint region: +5 per waypoint crossed.
+
+---
+
+## 🗂️ Notes for Implementation
+
+1. **Sensor Registration**  
+   - In `CarlaEnv.__init__()`, create one `SensorInterface` instance.  
+   - For each required sensor, call:  
+     ```yaml
+     SensorManager.spawn(
+       name:            "<sensor_name>",
+       attributes:      { "type": "<blueprint>", "transform": "<x,y,z,roll,pitch,yaw>", … },
+       interface:       sensor_interface,
+       parent:          ego_vehicle
+     )
+     ```
+   - Example:  
+     ```yaml
+     name: "collision_sensor"
+     attributes:
+       type: "sensor.other.collision"
+       transform: "0,0,0,0,0,0"
+     ```
+
+2. **Pulling Sensor Data**  
+   - In each `step()`, after `world.tick()`, call:  
+     ```python
+     sensor_data = self.sensor_interface.get_data()
+     ```
+   - Check if `"collision_sensor"` or `"lane_invasion_sensor"` are keys in `sensor_data` to detect events.
+   - Retrieve streaming data (IMU, GNSS, semantic camera) via their sensor names as needed.
+
+3. **Reward Calculation Order**  
+   1. **Collision** → apply **–100**, set `done=True`, return immediately.  
+   2. **Lane Crossing** → if present, apply **–50**; else compute lane-keeping bonus.  
+   3. **Speed Regulation** → apply **–50** if speed < 15 m/s; **–1** per step if speed > 25 m/s; add proximity bonus for closeness to 22 m/s.  
+   4. **Distance to Lane Center** → same as lane-keeping bonus/penalty above.  
+   5. **Progress Toward Goal** → compute `delta_d`; if positive, apply `(delta_d / initial_distance) × 100`; if `distance < 2 m`, apply **+100** and terminate.  
+   6. **Time Penalty** → apply **–1** per step; if `elapsed_steps ≥ MAX_TIMESTEPS`, apply **–100**, set `done=True`.  
+
+4. **Observation Design (Example)**  
+   - A simple observation vector:  
+     1. `current_speed` (scalar)  
+     2. `distance_to_goal` (scalar)  
+     3. `distance_to_center` (scalar)  
+   - Optionally augment with semantic segmentation image or GNSS coordinates.
+
+5. **Episode Reset**  
+   - Destroy sensors (`sensor_interface.destroy()`) and ego vehicle; respawn both.  
+   - Reset counters: `elapsed_steps=0`, `previous_distance_to_goal=None`, `initial_distance_to_goal=None`.
+
+6. **Tuning Recommendations**  
+   - Adjust reward magnitudes for stable learning:  
+     - If agent rarely reaches goal, increase **+100** to **+200**.  
+     - If lane-keeping bonus is too small, multiply `(3 – dist_center)` by 2 or 5.  
+     - If time penalty is too weak, increase from **–1** to **–2** per step.  
+
+---
+
+## 7. Reward Summary Tables
+
+### Positive Rewards
+
+| Condition                           | Reward                                                    |
+|-------------------------------------|-----------------------------------------------------------|
+| Reaching Goal                       | **+100** (ends episode)                                   |
+| Progress Toward Goal                | `+ (Δd / initial_distance) × 100` (only if Δd > 0)         |
+| Lane-Keeping (dist_center ≤ 3 m)    | `+ (3 – dist_center)` (∈ [0, +3])                          |
+| Target-Speed Proximity (|speed–22|) | `+ max(0, 10 – |speed – 22|)` (∈ [0, +10])                 |
+| (Optional) Stop at Red Light        | +5 (if fully stopped ≥1 s before red light)              |
+| (Optional) Yield to Pedestrian      | +10 (if stopped when pedestrian in crosswalk)            |
+| (Optional) Waypoint Advancement     | +5 per waypoint crossed along precomputed route          |
+
+### Negative Rewards
+
+| Condition                                 | Reward                          |
+|-------------------------------------------|---------------------------------|
+| Collision                                 | **–100** (ends episode)         |
+| Lane Crossing / Off-Road (dist_center >3) | **–50**                         |
+| Speed < MIN_SPEED (15 m/s)                | **–50**                         |
+| Speed > MAX_SPEED (25 m/s)                | **–1** per step                 |
+| Timeout (elapsed_steps ≥ 7500)            | **–100** (ends episode)         |
+| (Optional) High Jerk or Abrupt Steering   | Up to –5 per event              |
+| (Optional) Running Red Light              | **–20**                         |
+| (Optional) Passing Pedestrian Without Yield| **–30**                        |
+
+---
+
+## 8. Integration Notes
+
+- **Sensor Mapping:**  
+  - `collision_sensor` → collision events.  
+  - `lane_invasion_sensor` → lane crossings.  
+  - IMU (`imu_sensor`) → acceleration & jerk (optional smoothness).  
+  - GNSS (`gnss_sensor`) or direct `get_transform()` → position for distance-to-goal.  
+  - Semantic segmentation (`sem_seg_camera`) → pedestrian/traffic-light detection (optional).
+
+- **Step-by-Step Flow:**  
+  1. **Apply control** (steer, throttle, brake).  
+  2. **Tick CARLA** (`world.tick()`).  
+  3. **Retrieve** `sensor_data = sensor_interface.get_data()`.  
+  4. **Check collision** → –100 & terminate.  
+  5. **Check lane invasion** → –50 or lane-keeping bonus.  
+  6. **Compute speed-based** penalties/bonuses.  
+  7. **Compute progress-to-goal** reward; if reached → +100 & terminate.  
+  8. **Apply time penalty** (–1); if timeout → –100 & terminate.  
+  9. **Return** `(observation, reward, done, info)`.
+
+- **Observations & Actions:**  
+  - **Action space:**  
+    - Continuous: `[steer ∈ (–1,1), throttle ∈ (0,1), brake ∈ (0,1)]`.  
+    - Discrete: map indices to predefined controls.  
+  - **Observation space example:**  
+    ```  
+    [ current_speed, 
+      distance_to_goal, 
+      distance_to_center ]  
+    ```
+
+- **Episode Reset:**  
+  - Destroy sensors & ego vehicle; respawn both.  
+  - Reset counters: `elapsed_steps = 0`, `previous_distance_to_goal = None`, `initial_distance_to_goal = None`.
+
+---
+
+## 9. References
+
+1. **CARLA Simulator Documentation (Python API):**  
+   https://carla.readthedocs.io/en/latest/python_api/  
+
+2. **Gymnasium API Reference:**  
+   https://gymnasium.farama.org/  
+
+3. **CARLA Sensor Tutorials:**  
+   - https://carla.readthedocs.io/en/latest/tuto_sensors/  
+   - https://carla.readthedocs.io/en/latest/tuto_Gym_env/  
+
+4. **Global Route Planning (Optional):**  
+   - `agents/navigation/global_route_planner.py`  
+   - `agents/navigation/global_route_planner_dao.py`
