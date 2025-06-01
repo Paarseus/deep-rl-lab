@@ -89,20 +89,22 @@ class ClientConnection:
         if not self.world:
             return
             
-        print("Cleaning up all vehicles and sensors...")
+        print("[CLEANING UP] ConnectionManager: Cleaning up all vehicles and sensors...")
         actors = self.world.get_actors()
         
         for actor in actors:
             if (actor.type_id.startswith("vehicle.") or 
-                actor.type_id.startswith("sensor.")):
+                actor.type_id.startswith("sensor.") or actor.type_id.startswith("walker.")):
                 try:
                     actor.destroy()
-                    print(f"Destroyed: {actor.type_id} (ID: {actor.id})")
+                    print(f"[DESTROY SUCCESS] ConnectionManager: {actor.type_id} (ID: {actor.id})")
                 except Exception as e:
-                    print(f"Failed to destroy actor {actor.id}: {e}")
+                    print(f"[DESTROY FAILED] ConnectionManager: Failed to destroy actor {actor.id}: {e}")                
+
+
 
 if __name__ == "__main__":
-   conn = ClientConnection(town="Town10")       
+   conn = ClientConnection(town="Town03")       
    client, world = conn.connect() 
    conn.cleanup_all_actors() 
    conn.test_spawn_vehicle()  

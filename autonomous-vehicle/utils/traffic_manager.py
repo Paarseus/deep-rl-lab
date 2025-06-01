@@ -3,16 +3,14 @@ import time
 import carla
 from traffic_config import *
 
-from connection_manager import ClientConnection
-
 import argparse
 import logging
 from numpy import random
 
 
 
-class GenerateTraffic:
-        def __init__(self):
+class TrafficManager:
+        def __init__(self, client=None, world=None):
                 self.number_of_vehicles = number_of_vehicles
                 self.number_of_walkers = number_of_walkers
                 self.hero = hero
@@ -21,8 +19,15 @@ class GenerateTraffic:
                 self.vehicles_list = []
                 self.walkers_list = []
                 self.all_id = []
-                self.conn = ClientConnection(town="Town10HD_Opt")       
-                self.client, self.world = self.conn.connect()
+                if client is not None and world is not None:
+                        self.client = client
+                        self.world = world
+                        self.hero = None
+                        self.map = self.world.get_map()
+                        print("[CONNECTION SUCCESS] TrafficManager: Using provided CARLA client/world")
+                if client is None or world is None:
+                        raise RuntimeError("[CONNECTION FAILED] TrafficManager: Failed to get CARLA client/world")
+  
                 self.client.set_timeout(10.0)
 
                 self.synchronous_master = False
@@ -45,11 +50,11 @@ class GenerateTraffic:
                         if not settings.synchronous_mode:
                                 self.synchronous_master = True
                                 settings.synchronous_mode = True
-                                settings.fixed_delta_seconds = 0.05
+                                settings.fixed_delta_seconds = 0.1
                         else:
                                 self.synchronous_master = False
                 else:
-                        print("You are currently in asynchronous mode, and traffic might experience some issues")
+                        print("[WARNING] TrafficManager: You are currently in asynchronous mode, and traffic might experience some issues")
                 
                 if no_rendering:
                         settings.no_rendering_mode = True
@@ -302,7 +307,7 @@ class GenerateTraffic:
 if __name__ == '__main__':
 
     try:
-        GenerateTraffic().generate_all()
+        TrafficManager().generate_all()
         
     except KeyboardInterrupt:
         pass
