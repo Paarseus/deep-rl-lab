@@ -1,7 +1,11 @@
 import carla
+
 import gymnasium as gym
+from gymnasium import spaces
+
 import cv2
 import time
+import numpy as np
 
 from connection_manager import ClientConnection
 from sensors.sensor_manager import SensorManager
@@ -25,16 +29,15 @@ class CarlaEnv(gym.Env):
 
                 self.hero_manager = HeroManager(self.client, self.world, self.sensor_interface, self.sensor_manager)
 
-
-
         def reset(self, *, seed = None, options = None):
                 self.hero_manager.reset_hero(hero_config)
                 self.hero_manager.set_spectator_camera_view()
 
                 self.hero_manager.hero.set_autopilot(True)      #test
 
-                return
-        
+                
+
+                return         
 
 
         def step(self, action=None):
@@ -52,7 +55,7 @@ class CarlaEnv(gym.Env):
 
 
         def render(self):
-                self._camera_name = ['camera_front', 'camera_top']
+                self._camera_name = ['camera_front', 'camera_top', 'lidar']
                 self.render_mode = "human"
                 sensor_data = self.hero_manager.get_sensor_data()
                 for name in self._camera_name:
@@ -61,7 +64,18 @@ class CarlaEnv(gym.Env):
                         else:
                                 print(f"Invalid image data from {name}")
 
-                        if self.render_mode == "human":
+                        if name == 'lidar':
+                                bgr_image = np.zeros((400, 400, 3), dtype=np.uint8)
+                                if len(image_data) > 0:
+                                        x, y = image_data[:, 0], image_data[:, 1]
+                                        px = ((y + 50) / 100 * 400).astype(int)
+                                        py = ((50 - x) / 100 * 400).astype(int)
+                                        valid = (px >= 0) & (px < 400) & (py >= 0) & (py < 400)
+                                        bgr_image[py[valid], px[valid]] = [255, 255, 255]
+                                        cv2.namedWindow(name, cv2.WINDOW_AUTOSIZE)
+                                        
+
+                        elif self.render_mode == "human" and 'camera' in name :
                                 bgr_image = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
                                 cv2.namedWindow(name, cv2.WINDOW_AUTOSIZE)
                                 

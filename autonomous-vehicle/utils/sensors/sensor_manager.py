@@ -1,9 +1,7 @@
 import time
 
 import carla
-
-from sensor_config import *
-from sensor import *
+from sensors.sensor import *
 
 import argparse
 import logging
