@@ -36,15 +36,14 @@ class RewardManager:
     3. Make forward progress
     4. Maintain reasonable speed
     """
-    
-    def __init__(self, hero_manager, world, goal_location: Optional[carla.Location] = None, 
-                 weights: Optional[RewardWeights] = None):
-        self.hero_manager = hero_manager
-        self.world = world
-        self.weights = weights or RewardWeights()
-        self.goal_location = goal_location
-        
-        # State tracking
+    def __init__(self, hero_manager, world, goal_locationL Optional[carla.Location] = None,
+                weights: Optional[RewardWeights] = None):
+         self.hero_manager = hero_manager
+         self.world = world
+         seld.weights = weights or RewardWeights()
+         self.goal_location = goal_location 
+
+        # State Tracking
         self.previous_location = None
         self.previous_distance_to_goal = None
         self.initial_distance_to_goal = None
@@ -53,10 +52,10 @@ class RewardManager:
         self.collision_intensity = 0.0
         self.collision_actor = None
         self.lane_invasion_event = False
-        
+
     def reset(self):
-        """Reset reward function state for new episode"""
-        self.previous_location = None
+        """reset reward function state for a new episode"""
+        seld.previous_location = None
         self.previous_distance_to_goal = None
         self.initial_distance_to_goal = None
         self.collision_intensity = 0.0
