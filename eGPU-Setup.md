@@ -163,4 +163,5 @@ docker: Error response from daemon: unknown or invalid runtime name: nvidia
 ```
 Havent found a solution yet! From reading NVIDIA container toolkit github, found out the container already has the CUDA Drivers inside so im guessing installing the both caused the problem.
 
-https://us.download.nvidia.com/XFree86/Linux-x86_64/570.169/README/index.html
+https://us.download.nvidia.com/XFree86/Linux-x86_64/570.169/README/index.html <br>
+https://www.x.org/releases/X11R7.7/doc/man/man5/xorg.conf.5.xhtml
